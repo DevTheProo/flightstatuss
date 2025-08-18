@@ -5,7 +5,7 @@ const axios = require("axios");
 const app = express();
 app.use(bodyParser.json());
 
-// Replace with your AviationStack API key
+// Replace with your actual API key
 const API_KEY = "a33d5942b7ab8679b378952887217fe3";
 
 app.post("/webhook", async (req, res) => {
@@ -13,58 +13,59 @@ app.post("/webhook", async (req, res) => {
     const intent = req.body.queryResult.intent.displayName;
 
     if (intent === "CheckFlightStatus") {
-      const flightNumber = req.body.queryResult.parameters["flight-number"];
+      const airline = req.body.queryResult.parameters.airline || "";
+      const flightNumber = req.body.queryResult.parameters["flight-number"] || "";
+      const date = req.body.queryResult.parameters.date || "";
 
-      if (!flightNumber) {
+      if (!airline || !flightNumber) {
         return res.json({
-          fulfillmentText: "Please provide a valid flight number."
+          fulfillmentText: "Please provide both airline and flight number."
         });
       }
 
-      // Call AviationStack API
-      const response = await axios.get("http://api.aviationstack.com/v1/flights", {
-        params: {
-          access_key: API_KEY,
-          flight_iata: flightNumber
-        }
-      });
+      // Call real-time flight status API
+      const response = await axios.get(
+        `https://api.aviationstack.com/v1/flights?access_key=${API_KEY}&flight_iata=${airline}${flightNumber}&flight_date=${date}`
+      );
 
       const data = response.data.data[0];
 
       if (!data) {
         return res.json({
-          fulfillmentText: `I couldn’t find details for flight ${flightNumber}.`
+          fulfillmentText: `Sorry, I could not find flight ${airline}${flightNumber} on ${date}.`
         });
       }
 
-      // Extract details
-      const dep = data.departure;
-      const arr = data.arrival;
+      const departureAirport = data.departure.airport;
+      const departureTime = data.departure.estimated || data.departure.scheduled;
+      const arrivalAirport = data.arrival.airport;
+      const arrivalTime = data.arrival.estimated || data.arrival.scheduled;
+      const status = data.flight_status;
 
-      const responseText =
-        `✈️ Flight ${flightNumber}\n` +
-        `From: ${dep.airport} (${dep.iata})\n` +
-        `To: ${arr.airport} (${arr.iata})\n` +
-        `Departure: ${dep.scheduled || "N/A"} (Scheduled) → ${dep.estimated || "N/A"} (Estimated)\n` +
-        `Arrival: ${arr.scheduled || "N/A"} (Scheduled) → ${arr.estimated || "N/A"} (Estimated)\n` +
-        `Status: ${data.flight_status.toUpperCase()}`;
-
-      return res.json({ fulfillmentText: responseText });
+      return res.json({
+        fulfillmentText: `✈️ Flight ${airline}${flightNumber} status:\n` +
+          `🛫 Departure: ${departureAirport} at ${departureTime}\n` +
+          `🛬 Arrival: ${arrivalAirport} at ${arrivalTime}\n` +
+          `📊 Status: ${status.toUpperCase()}`
+      });
+    } else {
+      return res.json({
+        fulfillmentText: "Sorry, I can only check flight status right now."
+      });
     }
-
-    // Default fallback
-    return res.json({
-      fulfillmentText: "I couldn’t process that request."
-    });
-
   } catch (error) {
-    console.error("Error:", error.message);
-    res.json({
+    console.error(error);
+    return res.json({
       fulfillmentText: "There was an error fetching the flight status. Please try again."
     });
   }
 });
 
-app.listen(3000, () => {
-  console.log("Flight status webhook is running on port 3000");
+app.get("/", (req, res) => {
+  res.send("Flight Status Webhook is running ✅");
+});
+
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
+  console.log(`Server is running on port ${PORT}`);
 });
