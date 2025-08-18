@@ -6,7 +6,7 @@ const app = express();
 app.use(bodyParser.json());
 
 // Replace with your AviationStack API key
-const API_KEY = "a33d5942b7ab8679b378952887217fe";
+const API_KEY = "a33d5942b7ab8679b378952887217fe3";
 
 app.post("/webhook", async (req, res) => {
   try {
