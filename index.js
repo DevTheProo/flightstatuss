@@ -12,27 +12,27 @@ app.post("/webhook", async (req, res) => {
   try {
     const intent = req.body.queryResult.intent.displayName;
 
-    if (intent === "CheckFlightStatus") {
-      const airline = req.body.queryResult.parameters.airline || "";
+    // Match with your Dialogflow intent name
+    if (intent === "FlightDetails") {
       const flightNumber = req.body.queryResult.parameters["flight-number"] || "";
       const date = req.body.queryResult.parameters.date || "";
 
-      if (!airline || !flightNumber) {
+      if (!flightNumber) {
         return res.json({
-          fulfillmentText: "Please provide both airline and flight number."
+          fulfillmentText: "Please provide a flight number."
         });
       }
 
       // Call real-time flight status API
       const response = await axios.get(
-        `https://api.aviationstack.com/v1/flights?access_key=${API_KEY}&flight_iata=${airline}${flightNumber}&flight_date=${date}`
+        `https://api.aviationstack.com/v1/flights?access_key=${API_KEY}&flight_iata=${flightNumber}&flight_date=${date}`
       );
 
       const data = response.data.data[0];
 
       if (!data) {
         return res.json({
-          fulfillmentText: `Sorry, I could not find flight ${airline}${flightNumber} on ${date}.`
+          fulfillmentText: `Sorry, I could not find flight ${flightNumber} on ${date}.`
         });
       }
 
@@ -43,7 +43,7 @@ app.post("/webhook", async (req, res) => {
       const status = data.flight_status;
 
       return res.json({
-        fulfillmentText: `✈️ Flight ${airline}${flightNumber} status:\n` +
+        fulfillmentText: `✈️ Flight ${flightNumber} status:\n` +
           `🛫 Departure: ${departureAirport} at ${departureTime}\n` +
           `🛬 Arrival: ${arrivalAirport} at ${arrivalTime}\n` +
           `📊 Status: ${status.toUpperCase()}`
