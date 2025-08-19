@@ -7,50 +7,86 @@ app.use(bodyParser.json());
 
 const PORT = process.env.PORT || 3000;
 
+// Root route
 app.get("/", (req, res) => {
-  res.send("✈️ Flight Status Webhook running with OpenSky ✅");
+  res.send("✈️ Flight Status Webhook is running with AviationStack ✅");
 });
 
+// Webhook endpoint
 app.post("/webhook", async (req, res) => {
   try {
-    const flightNumber = req.body.queryResult?.parameters["flight-number"]?.toUpperCase();
+    const flightNumber = req.body.queryResult?.parameters["flight-number"];
 
     if (!flightNumber) {
-      return res.json({ fulfillmentText: "Please provide a valid flight number ✈️" });
+      return res.json({
+        fulfillmentText: "Please provide a valid flight number ✈️"
+      });
     }
 
-    const response = await axios.get("https://opensky-network.org/api/states/all");
+    // AviationStack API
+    const url = `http://api.aviationstack.com/v1/flights?access_key=${
+      process.env.AVIATIONSTACK_API_KEY || "a33d5942b7ab8679b378952887217fe3"
+    }&flight_iata=${flightNumber}`;
 
-    if (response.data && response.data.states) {
-      const flights = response.data.states;
+    const response = await axios.get(url);
 
-      // Match ICAO callsign
-      const match = flights.find(f => f[1]?.trim() === flightNumber);
+    if (response.data && response.data.data && response.data.data.length > 0) {
+      const flight = response.data.data[0];
 
-      if (match) {
-        const callsign = match[1]?.trim();
-        const country = match[2];
-        const lat = match[6]?.toFixed(2);
-        const lon = match[5]?.toFixed(2);
-        const altitude = match[13] ? `${Math.round(match[13])} m` : "unknown";
-        const velocity = match[9] ? `${(match[9] * 3.6).toFixed(1)} km/h` : "unknown";
+      const airline = flight.airline?.name || "Unknown airline";
+      const flight_iata = flight.flight?.iata || flightNumber;
+      const flight_icao = flight.flight?.icao || "N/A";
+      const status = flight.flight_status || "Unknown";
 
-        return res.json({
-          fulfillmentText: `✈️ Flight ${callsign} (${country})  
-          📍 Location: ${lat}, ${lon}  
-          🛫 Altitude: ${altitude}  
-          💨 Speed: ${velocity}`
-        });
-      } else {
-        return res.json({ fulfillmentText: `Sorry, no live data found for flight ${flightNumber}.` });
-      }
+      const departure = {
+        airport: flight.departure?.airport || "Unknown",
+        scheduled: flight.departure?.scheduled || "N/A",
+        gate: flight.departure?.gate || "N/A",
+        terminal: flight.departure?.terminal || "N/A"
+      };
+
+      const arrival = {
+        airport: flight.arrival?.airport || "Unknown",
+        scheduled: flight.arrival?.scheduled || "N/A",
+        gate: flight.arrival?.gate || "N/A",
+        terminal: flight.arrival?.terminal || "N/A"
+      };
+
+      const aircraft = flight.aircraft?.registration
+        ? `${flight.aircraft?.registration} (${flight.aircraft?.icao24 || "N/A"})`
+        : "Not available";
+
+      // Real-time data (position + speed + altitude)
+      const live = flight.live
+        ? `📍 Position: Lat ${flight.live.latitude}, Lon ${flight.live.longitude}\n` +
+          `🛫 Altitude: ${flight.live.altitude} m\n` +
+          `⚡ Speed: ${flight.live.speed_horizontal} km/h\n` +
+          `🧭 Direction: ${flight.live.direction}°`
+        : "Live tracking not available";
+
+      return res.json({
+        fulfillmentText: `📡 Flight Status Report:\n\n` +
+          `✈️ Airline: ${airline}\n` +
+          `🆔 Flight: ${flight_iata} / ${flight_icao}\n` +
+          `📍 Departure: ${departure.airport}\n   - Scheduled: ${departure.scheduled}\n   - Terminal: ${departure.terminal}, Gate: ${departure.gate}\n` +
+          `📍 Arrival: ${arrival.airport}\n   - Scheduled: ${arrival.scheduled}\n   - Terminal: ${arrival.terminal}, Gate: ${arrival.gate}\n` +
+          `🛫 Aircraft: ${aircraft}\n` +
+          `📊 Current Status: ${status.toUpperCase()}\n\n` +
+          `${live}`
+      });
+    } else {
+      return res.json({
+        fulfillmentText: `Sorry, I could not find live data for flight ${flightNumber}.`
+      });
     }
-
-    return res.json({ fulfillmentText: "No flight data available at the moment." });
-  } catch (err) {
-    console.error(err.message);
-    return res.json({ fulfillmentText: "Error fetching flight status ❌" });
+  } catch (error) {
+    console.error("Error fetching flight data:", error.message);
+    return res.json({
+      fulfillmentText: "Oops! Something went wrong fetching the flight status."
+    });
   }
 });
 
-app.listen(PORT, () => console.log(`✅ Server running on port ${PORT}`));
+app.listen(PORT, () => {
+  console.log(`✅ Server running on port ${PORT}`);
+});
