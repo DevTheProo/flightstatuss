@@ -9,7 +9,7 @@ const PORT = process.env.PORT || 3000;
 
 // Root route
 app.get("/", (req, res) => {
-  res.send("✈️ Flight Status Webhook is running with OpenSky ✅");
+  res.send("✈️ Flight Status Webhook is running with AviationStack ✅");
 });
 
 // Webhook endpoint
@@ -23,31 +23,25 @@ app.post("/webhook", async (req, res) => {
       });
     }
 
-    // OpenSky API (returns all live aircraft states)
-    const response = await axios.get("https://opensky-network.org/api/states/all");
+    // AviationStack API (using your API key)
+    const url = `http://api.aviationstack.com/v1/flights?access_key=${process.env.AVIATIONSTACK_API_KEY || "a33d5942b7ab8679b378952887217fe3"}&flight_iata=${flightNumber}`;
 
-    if (response.data && response.data.states) {
-      const flights = response.data.states;
-      // OpenSky gives ICAO24 + callsign instead of IATA flight no.
-      const match = flights.find(f => f[1]?.trim() === flightNumber);
+    const response = await axios.get(url);
 
-      if (match) {
-        const callsign = match[1]?.trim();
-        const originCountry = match[2];
-        const velocity = match[9] ? `${(match[9] * 3.6).toFixed(1)} km/h` : "unknown speed";
-        const altitude = match[13] ? `${Math.round(match[13])} m` : "unknown altitude";
+    if (response.data && response.data.data && response.data.data.length > 0) {
+      const flight = response.data.data[0];
 
-        return res.json({
-          fulfillmentText: `Flight ${callsign} from ${originCountry} is currently flying at ${altitude} with speed ${velocity}.`
-        });
-      } else {
-        return res.json({
-          fulfillmentText: `Sorry, I could not find the status for flight ${flightNumber}.`
-        });
-      }
+      const airline = flight.airline?.name || "Unknown airline";
+      const departure = flight.departure?.airport || "Unknown departure";
+      const arrival = flight.arrival?.airport || "Unknown arrival";
+      const status = flight.flight_status || "Unknown";
+
+      return res.json({
+        fulfillmentText: `✈️ Flight ${flightNumber} (${airline}) is currently **${status}**.\nDeparture: ${departure} → Arrival: ${arrival}.`
+      });
     } else {
       return res.json({
-        fulfillmentText: "No flight data available at the moment."
+        fulfillmentText: `Sorry, I could not find live data for flight ${flightNumber}.`
       });
     }
   } catch (error) {
@@ -61,3 +55,4 @@ app.post("/webhook", async (req, res) => {
 app.listen(PORT, () => {
   console.log(`✅ Server running on port ${PORT}`);
 });
+
