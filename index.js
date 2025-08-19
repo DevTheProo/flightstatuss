@@ -1,43 +1,63 @@
-const express = require("express");
-const axios = require("axios");
-const bodyParser = require("body-parser");
+import express from "express";
+import bodyParser from "body-parser";
+import axios from "axios";
 
 const app = express();
 app.use(bodyParser.json());
 
+const PORT = process.env.PORT || 3000;
+
+// Root route
+app.get("/", (req, res) => {
+  res.send("✈️ Flight Status Webhook is running with OpenSky ✅");
+});
+
+// Webhook endpoint
 app.post("/webhook", async (req, res) => {
-  const flightNumber = req.body.queryResult.parameters["flight-number"];
-
   try {
-    // Fetch all current flights from OpenSky
-    const response = await axios.get("https://opensky-network.org/api/states/all");
-    const flights = response.data.states;
+    const flightNumber = req.body.queryResult?.parameters["flight-number"];
 
-    if (!flights) {
-      return res.json({ fulfillmentText: "Sorry, I couldn't fetch flight data right now." });
+    if (!flightNumber) {
+      return res.json({
+        fulfillmentText: "Please provide a valid flight number ✈️"
+      });
     }
 
-    // Try to find the matching flight number in the callsign field
-    const match = flights.find(f => f[1] && f[1].trim() === flightNumber);
+    // OpenSky API (returns all live aircraft states)
+    const response = await axios.get("https://opensky-network.org/api/states/all");
 
-    if (match) {
-      const callsign = match[1].trim();
-      const originCountry = match[2];
-      const longitude = match[5];
-      const latitude = match[6];
-      const altitude = match[7];
-      const velocity = match[9];
+    if (response.data && response.data.states) {
+      const flights = response.data.states;
+      // OpenSky gives ICAO24 + callsign instead of IATA flight no.
+      const match = flights.find(f => f[1]?.trim() === flightNumber);
 
-      const message = `Flight ${callsign} from ${originCountry} is currently at latitude ${latitude}, longitude ${longitude}, altitude ${altitude} meters, moving at ${velocity} m/s.`;
+      if (match) {
+        const callsign = match[1]?.trim();
+        const originCountry = match[2];
+        const velocity = match[9] ? `${(match[9] * 3.6).toFixed(1)} km/h` : "unknown speed";
+        const altitude = match[13] ? `${Math.round(match[13])} m` : "unknown altitude";
 
-      return res.json({ fulfillmentText: message });
+        return res.json({
+          fulfillmentText: `Flight ${callsign} from ${originCountry} is currently flying at ${altitude} with speed ${velocity}.`
+        });
+      } else {
+        return res.json({
+          fulfillmentText: `Sorry, I could not find the status for flight ${flightNumber}.`
+        });
+      }
     } else {
-      return res.json({ fulfillmentText: `Sorry, I couldn’t find real-time data for flight ${flightNumber}.` });
+      return res.json({
+        fulfillmentText: "No flight data available at the moment."
+      });
     }
   } catch (error) {
     console.error("Error fetching flight data:", error.message);
-    return res.json({ fulfillmentText: "There was an error fetching flight data. Please try again later." });
+    return res.json({
+      fulfillmentText: "Oops! Something went wrong fetching the flight status."
+    });
   }
 });
 
-app.listen(3000, () => console.log("Server is running on port 3000"));
+app.listen(PORT, () => {
+  console.log(`✅ Server running on port ${PORT}`);
+});
