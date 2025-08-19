@@ -7,52 +7,52 @@ app.use(bodyParser.json());
 
 const PORT = process.env.PORT || 3000;
 
-// Root route
 app.get("/", (req, res) => {
-  res.send("✈️ Flight Status Webhook is running with AviationStack ✅");
+  res.send("✈️ Flight Status Webhook running with Flightradar24 ✅");
 });
 
-// Webhook endpoint
 app.post("/webhook", async (req, res) => {
   try {
-    const flightNumber = req.body.queryResult?.parameters["flight-number"];
+    const flightNumber = req.body.queryResult?.parameters["flight-number"]?.toUpperCase();
 
     if (!flightNumber) {
-      return res.json({
-        fulfillmentText: "Please provide a valid flight number ✈️"
-      });
+      return res.json({ fulfillmentText: "Please provide a valid flight number ✈️" });
     }
 
-    // AviationStack API (using your API key)
-    const url = `http://api.aviationstack.com/v1/flights?access_key=${process.env.AVIATIONSTACK_API_KEY || "a33d5942b7ab8679b378952887217fe3"}&flight_iata=${flightNumber}`;
+    // Fetch live flights
+    const response = await axios.get("https://data-live.flightradar24.com/zones/fcgi/feed.js?bounds=90,-90,-180,180");
+    const flights = response.data;
 
-    const response = await axios.get(url);
+    let found = null;
 
-    if (response.data && response.data.data && response.data.data.length > 0) {
-      const flight = response.data.data[0];
+    for (const key in flights) {
+      const flight = flights[key];
+      if (Array.isArray(flight) && flight[16] === flightNumber) {
+        found = flight;
+        break;
+      }
+    }
 
-      const airline = flight.airline?.name || "Unknown airline";
-      const departure = flight.departure?.airport || "Unknown departure";
-      const arrival = flight.arrival?.airport || "Unknown arrival";
-      const status = flight.flight_status || "Unknown";
+    if (found) {
+      const callsign = found[16]; // Flight number
+      const lat = found[1];
+      const lon = found[2];
+      const altitude = `${found[4]} m`;
+      const speed = `${found[5]} km/h`;
 
       return res.json({
-        fulfillmentText: `✈️ Flight ${flightNumber} (${airline}) is currently **${status}**.\nDeparture: ${departure} → Arrival: ${arrival}.`
+        fulfillmentText: `✈️ Flight ${callsign} is live:  
+        📍 Position: ${lat}, ${lon}  
+        🛫 Altitude: ${altitude}  
+        💨 Speed: ${speed}`
       });
     } else {
-      return res.json({
-        fulfillmentText: `Sorry, I could not find live data for flight ${flightNumber}.`
-      });
+      return res.json({ fulfillmentText: `Sorry, flight ${flightNumber} not found in Flightradar24 data.` });
     }
-  } catch (error) {
-    console.error("Error fetching flight data:", error.message);
-    return res.json({
-      fulfillmentText: "Oops! Something went wrong fetching the flight status."
-    });
+  } catch (err) {
+    console.error(err.message);
+    return res.json({ fulfillmentText: "Error fetching flight status ❌" });
   }
 });
 
-app.listen(PORT, () => {
-  console.log(`✅ Server running on port ${PORT}`);
-});
-
+app.listen(PORT, () => console.log(`✅ Server running on port ${PORT}`));
