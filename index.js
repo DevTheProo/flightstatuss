@@ -8,7 +8,7 @@ app.use(bodyParser.json());
 const PORT = process.env.PORT || 3000;
 
 app.get("/", (req, res) => {
-  res.send("✈️ Flight Status Webhook running with Flightradar24 ✅");
+  res.send("✈️ Flight Status Webhook running with OpenSky ✅");
 });
 
 app.post("/webhook", async (req, res) => {
@@ -19,36 +19,34 @@ app.post("/webhook", async (req, res) => {
       return res.json({ fulfillmentText: "Please provide a valid flight number ✈️" });
     }
 
-    // Fetch live flights
-    const response = await axios.get("https://data-live.flightradar24.com/zones/fcgi/feed.js?bounds=90,-90,-180,180");
-    const flights = response.data;
+    const response = await axios.get("https://opensky-network.org/api/states/all");
 
-    let found = null;
+    if (response.data && response.data.states) {
+      const flights = response.data.states;
 
-    for (const key in flights) {
-      const flight = flights[key];
-      if (Array.isArray(flight) && flight[16] === flightNumber) {
-        found = flight;
-        break;
+      // Match ICAO callsign
+      const match = flights.find(f => f[1]?.trim() === flightNumber);
+
+      if (match) {
+        const callsign = match[1]?.trim();
+        const country = match[2];
+        const lat = match[6]?.toFixed(2);
+        const lon = match[5]?.toFixed(2);
+        const altitude = match[13] ? `${Math.round(match[13])} m` : "unknown";
+        const velocity = match[9] ? `${(match[9] * 3.6).toFixed(1)} km/h` : "unknown";
+
+        return res.json({
+          fulfillmentText: `✈️ Flight ${callsign} (${country})  
+          📍 Location: ${lat}, ${lon}  
+          🛫 Altitude: ${altitude}  
+          💨 Speed: ${velocity}`
+        });
+      } else {
+        return res.json({ fulfillmentText: `Sorry, no live data found for flight ${flightNumber}.` });
       }
     }
 
-    if (found) {
-      const callsign = found[16]; // Flight number
-      const lat = found[1];
-      const lon = found[2];
-      const altitude = `${found[4]} m`;
-      const speed = `${found[5]} km/h`;
-
-      return res.json({
-        fulfillmentText: `✈️ Flight ${callsign} is live:  
-        📍 Position: ${lat}, ${lon}  
-        🛫 Altitude: ${altitude}  
-        💨 Speed: ${speed}`
-      });
-    } else {
-      return res.json({ fulfillmentText: `Sorry, flight ${flightNumber} not found in Flightradar24 data.` });
-    }
+    return res.json({ fulfillmentText: "No flight data available at the moment." });
   } catch (err) {
     console.error(err.message);
     return res.json({ fulfillmentText: "Error fetching flight status ❌" });
